@@ -1,0 +1,34 @@
+# Probe P16 (harness-proef only): which ref and sha each event type runs on.
+# No secrets, no checkout. Untrusted values go through env, never inline.
+name: ref-probe
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [opened, synchronize]
+  pull_request_target:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print what this event ran on
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_COMMIT_ID: ${{ github.event.review.commit_id }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          echo "event_name        = $EVENT_NAME"
+          echo "GITHUB_REF        = $GITHUB_REF"
+          echo "GITHUB_SHA        = $GITHUB_SHA"
+          echo "review.state      = ${REVIEW_STATE:-<none>}"
+          echo "review.commit_id  = ${REVIEW_COMMIT_ID:-<none>}"
+          echo "pr.head.sha       = ${PR_HEAD_SHA:-<none>}"
+          echo "pr.base.ref       = ${PR_BASE_REF:-<none>}"
+          echo "workflow_ref      = $GITHUB_WORKFLOW_REF"

@@ -1,0 +1,55 @@
+# Probe P3 (harness-proef only): fast-forward push of a SHA to main with the
+# fpl-lander App token (bypass actor "always" on the main rulesets). No force.
+# Dispatch: gh workflow run land-probe.yml -f sha=<40-hex sha already on some branch>
+name: land-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "commit to fast-forward main to (must be reachable from a branch)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  land:
+    runs-on: ubuntu-latest
+    environment: land
+    steps:
+      # harness-proef holds test content only, so a full checkout is fine here.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Mint fpl-lander token (contents write only)
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.LAND_APP_ID }}
+          private-key: ${{ secrets.LAND_APP_KEY }}
+          permission-contents: write
+
+      - name: Push sha to main (no force)
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -u
+          printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "sha must be 40 lowercase hex chars" >&2; exit 1; }
+          git cat-file -e "$SHA^{commit}" || { echo "sha not in checkout" >&2; exit 1; }
+          echo "main before: $(git rev-parse origin/main)"
+          if git merge-base --is-ancestor origin/main "$SHA"; then
+            echo "fast-forward: yes"
+          else
+            echo "fast-forward: NO (push will be refused)"
+          fi
+          rc=0
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "$SHA:refs/heads/main" || rc=$?
+          echo "RESULT: git push exit code $rc"
+          echo "main after:  $(git ls-remote "https://github.com/${REPO}.git" refs/heads/main | cut -f1)"
+          exit "$rc"

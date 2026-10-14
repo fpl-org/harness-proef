@@ -1,0 +1,53 @@
+# Probe P2/P14 (harness-proef only): flip a ruleset's enforcement with the
+# fpl-brake App token and print timestamps for lag measurement.
+# Dispatch: gh workflow run brake-probe.yml -f enforcement=active -f ruleset_id=<id>
+name: brake-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforcement:
+        description: "target enforcement of the ruleset"
+        type: choice
+        options: [active, disabled]
+        required: true
+      ruleset_id:
+        description: "numeric id of the brake ruleset"
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    environment: brake
+    steps:
+      - name: Mint fpl-brake token (administration:write)
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.BRAKE_APP_ID }}
+          private-key: ${{ secrets.BRAKE_APP_KEY }}
+          permission-administration: write
+
+      - name: Flip enforcement and time it
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          ENFORCEMENT: ${{ inputs.enforcement }}
+          RULESET_ID: ${{ inputs.ruleset_id }}
+        run: |
+          set -eu
+          printf '%s' "$RULESET_ID" | grep -Eq '^[0-9]+$' || { echo "ruleset_id must be numeric" >&2; exit 1; }
+          case "$ENFORCEMENT" in active|disabled) ;; *) echo "bad enforcement" >&2; exit 1;; esac
+          echo "T_before    $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+          before=$(gh api "repos/$REPO/rulesets/$RULESET_ID" --jq .enforcement)
+          echo "was         $before"
+          gh api -X PUT "repos/$REPO/rulesets/$RULESET_ID" -f enforcement="$ENFORCEMENT" \
+            --jq '"put returned enforcement=" + .enforcement + " updated_at=" + .updated_at'
+          echo "T_after_put $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+          after=$(gh api "repos/$REPO/rulesets/$RULESET_ID" --jq .enforcement)
+          echo "now         $after"
+          echo "T_after_get $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+          [ "$after" = "$ENFORCEMENT" ]
